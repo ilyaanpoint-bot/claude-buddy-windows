@@ -11,6 +11,7 @@
     <RootNamespace>ClaudeBuddy</RootNamespace>
     <Version>1.0.0</Version>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>buddy.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
