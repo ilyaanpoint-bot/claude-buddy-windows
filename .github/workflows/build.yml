@@ -31,7 +31,8 @@ jobs:
         run: |
           # A tag like v0.2.0 sets the app's version, so the in-app updater can compare it.
           $version = if ("${{ github.ref }}" -like "refs/tags/v*") { "${{ github.ref_name }}".Substring(1) } else { "" }
-          $extra = if ($version) { @("-p:Version=$version") } else { @() }
+          $extra = @()
+          if ($version) { $extra += "-p:Version=$version" }
           dotnet publish src/ClaudeBuddy.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out @extra
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Smoke test (starts and stays running)
