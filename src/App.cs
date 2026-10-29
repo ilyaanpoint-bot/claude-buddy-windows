@@ -640,7 +640,7 @@ class BuddyApp
             ("room-working", () => { _testFriendUntil = 0; _sessions["selftest"] = new Session { Mood = Mood.Working }; }),
             ("room-greenhouse", () => { _sessions.Clear(); d.Room = "greenhouse"; }),
             ("room-space", () => d.Room = "space"),
-            ("room-beach", () => { d.Room = "beach"; _room.Say("hi from the beach! 🏖️"); }),
+            ("room-beach", () => { d.Room = "beach"; _room.Say("hi from the beach! 🏖️"); _room.ShowToast("🏆 Bug Squasher · +50 XP"); }),
             ("wardrobe-skins", () => { d.Room = "studio"; _room.Open(RoomForm.Overlay.Wardrobe); }),
             ("wardrobe-hats", () => _room.SelectTab(1)),
             ("wardrobe-rooms", () => _room.SelectTab(2)),

@@ -2,6 +2,8 @@
 // recent interactions into a Pose that the Renderer draws).
 
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
@@ -243,6 +245,63 @@ static class Renderer
         using var f = new Font("Segoe UI", size, bold ? FontStyle.Bold : FontStyle.Regular, GraphicsUnit.Pixel);
         using var b = new SolidBrush(c);
         g.DrawString(s, f, b, 0, -size * 1.35f);
+        g.Restore(st);
+    }
+
+    // GDI+ doesn't fall back to an emoji font by itself, so text is drawn in runs: emoji with
+    // Segoe UI Emoji (monochrome in GDI+), everything else with the given font.
+    static readonly StringFormat Typo = MakeTypo();
+    static StringFormat MakeTypo()
+    {
+        var f = (StringFormat)StringFormat.GenericTypographic.Clone();
+        f.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces | StringFormatFlags.NoWrap;
+        return f;
+    }
+
+    static bool IsEmoji(Rune r) =>
+        r.Value >= 0x1F000 || (r.Value >= 0x2600 && r.Value <= 0x27BF) || (r.Value >= 0x2B00 && r.Value <= 0x2BFF) ||
+        (r.Value >= 0x2300 && r.Value <= 0x23FF) || r.Value == 0x200D || r.Value == 0xFE0F || r.Value == 0x20E3;
+
+    static IEnumerable<(string text, bool emoji)> Runs(string s)
+    {
+        var sb = new StringBuilder();
+        bool? cur = null;
+        foreach (var r in s.EnumerateRunes())
+        {
+            bool e = IsEmoji(r);
+            if (cur != null && e != cur) { yield return (sb.ToString(), cur.Value); sb.Clear(); }
+            cur = e;
+            sb.Append(r.ToString());
+        }
+        if (sb.Length > 0) yield return (sb.ToString(), cur ?? false);
+    }
+
+    static Font EmojiFont(Font f) => new("Segoe UI Emoji", f.Size, FontStyle.Regular, f.Unit);
+
+    public static float MeasureRich(Graphics g, string s, Font f)
+    {
+        float w = 0;
+        foreach (var (text, emoji) in Runs(s))
+        {
+            if (!emoji) { w += g.MeasureString(text, f, PointF.Empty, Typo).Width; continue; }
+            using var ef = EmojiFont(f);
+            w += g.MeasureString(text, ef, PointF.Empty, Typo).Width;
+        }
+        return w;
+    }
+
+    /// Draws one line of text (emoji included) with its top-left at (x, y), cut off at maxWidth.
+    public static void DrawRich(Graphics g, string s, Font f, Brush b, float x, float y, float maxWidth = 10000)
+    {
+        var st = g.Save();
+        g.IntersectClip(new RectangleF(x - 2, y - 4, maxWidth + 2, f.GetHeight(g) + 8));
+        foreach (var (text, emoji) in Runs(s))
+        {
+            if (!emoji) { g.DrawString(text, f, b, x, y, Typo); x += g.MeasureString(text, f, PointF.Empty, Typo).Width; continue; }
+            using var ef = EmojiFont(f);
+            g.DrawString(text, ef, b, x, y, Typo);
+            x += g.MeasureString(text, ef, PointF.Empty, Typo).Width;
+        }
         g.Restore(st);
     }
 

@@ -192,13 +192,13 @@ class RoomForm : Form
     {
         using var f = MakeFont(size, bold, mono);
         using var b = new SolidBrush(c);
-        _g.DrawString(s, f, b, x, Y(y) - size * 1.3f);
+        Renderer.DrawRich(_g, s, f, b, x, Y(y) - size * 1.2f);
     }
 
     float TextWidth(string s, float size, bool bold = false)
     {
         using var f = MakeFont(size, bold);
-        return _g.MeasureString(s, f).Width;
+        return Renderer.MeasureRich(_g, s, f);
     }
 
     void Line(Color c, float width, params (float x, float y)[] pts)
@@ -583,15 +583,14 @@ class RoomForm : Form
     void DrawSpeech(PointF pt)
     {
         using var f = MakeFont(11, true);
-        float w = Math.Min(220, _g.MeasureString(_speech, f).Width + 16);
+        float w = Math.Min(220, Renderer.MeasureRich(_g, _speech, f) + 16);
         float x = Math.Max(6, Math.Min(W - w - 6, pt.X - w / 2));
         var r = R(x, pt.Y + 4, w, 22);
         using var bg = new SolidBrush(Color.FromArgb(247, 252, 252, 252));
         using (var path = CornerWindow.RoundRect(r, 10)) _g.FillPath(bg, path);
         _g.FillPolygon(bg, new[] { Pt(pt.X - 5, pt.Y + 5), Pt(pt.X, pt.Y - 2), Pt(pt.X + 5, pt.Y + 5) });
         using var tb = new SolidBrush(Color.FromArgb(31, 31, 31));
-        using var fmt = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-        _g.DrawString(_speech, f, tb, new RectangleF(r.X + 8, r.Y + 3, r.Width - 10, r.Height - 4), fmt);
+        Renderer.DrawRich(_g, _speech, f, tb, r.X + 8, r.Y + 4, r.Width - 14);
     }
 
     void DrawToast()
@@ -634,7 +633,7 @@ class RoomForm : Form
     static readonly string[] Tabs = { "Skins", "Hats", "Rooms", "Trophies" };
     static readonly RectangleF WardrobePanel = new(10, 52, 440, 280);
     static RectangleF TabRect(int i) => new(WardrobePanel.X + 10 + i * 84, WardrobePanel.Bottom - 32, 80, 24);
-    static RectangleF CellRect(int i) => new(WardrobePanel.X + 10 + (i % 5) * 85, WardrobePanel.Bottom - 130 - (i / 5) * 98, 80, 92);
+    static RectangleF CellRect(int i) => new(WardrobePanel.X + 11 + (i % 6) * 70, WardrobePanel.Bottom - 130 - (i / 6) * 98, 66, 92);
     static RectangleF CloseRect => new(WardrobePanel.Right - 30, WardrobePanel.Bottom - 32, 26, 26);
     static RectangleF TrophyRect(int i) => new(WardrobePanel.X + 10 + (i % 2) * 214, WardrobePanel.Bottom - 64 - (i / 2) * 23, 206, 20);
     Item[] TabItems => Catalog.Items.Where(x => x.Kind == new[] { ItemKind.Skin, ItemKind.Hat, ItemKind.Room }[Math.Min(_wardrobeTab, 2)]).ToArray();
@@ -685,7 +684,7 @@ class RoomForm : Form
             }
             else DrawText("?", c.X - 7, c.Y - 16, 26, Color.FromArgb(89, 255, 255, 255), true);
             string name = unlocked || it.Level != null ? it.Name : "Secret";
-            DrawText(name, r.X + r.Width / 2 - TextWidth(name, 10.5f) / 2, r.Y + 17, 10.5f, Color.White);
+            DrawText(name, r.X + r.Width / 2 - TextWidth(name, 10) / 2, r.Y + 17, 10, Color.White);
             string tag = unlocked ? (equipped ? "Wearing" : "") : it.Level is int l ? $"Lv {l}" : "secret";
             if (tag.Length > 0) DrawText(tag, r.X + r.Width / 2 - TextWidth(tag, 9.5f) / 2, r.Y + 4, 9.5f, Color.FromArgb(179, 179, 179));
             if (hover && !unlocked) hoverHint = it.Level is int lvl ? $"Reach level {lvl} to unlock {it.Name}." : $"Hint: {it.Hint}";

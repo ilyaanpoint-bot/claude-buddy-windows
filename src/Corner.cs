@@ -91,8 +91,8 @@ class CornerWindow : LayeredForm
     RectangleF BubbleRect(int i, Graphics g)
     {
         var s = Slots[i];
-        float tw = Math.Min(200, g.MeasureString(s.BubbleTitle, TitleFont).Width);
-        float sw = s.BubbleSub.Length == 0 ? 0 : Math.Min(200, g.MeasureString(s.BubbleSub, SubFont).Width);
+        float tw = Math.Min(200, Renderer.MeasureRich(g, s.BubbleTitle, TitleFont));
+        float sw = s.BubbleSub.Length == 0 ? 0 : Math.Min(200, Renderer.MeasureRich(g, s.BubbleSub, SubFont));
         float w = Math.Max(tw, sw) + 34, h = s.BubbleSub.Length == 0 ? 28 : 42;
         int other = 1 - i;
         bool stacked = BubbleVisible(other) && Slots[other].BubbleAt < s.BubbleAt;
@@ -216,14 +216,13 @@ class CornerWindow : LayeredForm
             g.FillPath(wb, path);
         }
         using (var dot = new SolidBrush(Palette.Alpha(Renderer.RayColor(SkinOf(i), 0, Clock.Now), a))) g.FillEllipse(dot, r.X + 10, r.Y + 11, 7, 7);
-        using var fmt = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
         using var tb = new SolidBrush(Color.FromArgb((int)(255 * a), 30, 30, 30));
         using var gb = new SolidBrush(Color.FromArgb((int)(255 * a), 97, 97, 97));
-        if (s.BubbleSub.Length == 0) g.DrawString(s.BubbleTitle, TitleFont, tb, new RectangleF(r.X + 22, r.Y + 6, r.Width - 30, 18), fmt);
+        if (s.BubbleSub.Length == 0) Renderer.DrawRich(g, s.BubbleTitle, TitleFont, tb, r.X + 24, r.Y + 7, r.Width - 30);
         else
         {
-            g.DrawString(s.BubbleTitle, TitleFont, tb, new RectangleF(r.X + 22, r.Y + 5, r.Width - 30, 18), fmt);
-            g.DrawString(s.BubbleSub, SubFont, gb, new RectangleF(r.X + 22, r.Y + 21, r.Width - 30, 16), fmt);
+            Renderer.DrawRich(g, s.BubbleTitle, TitleFont, tb, r.X + 24, r.Y + 6, r.Width - 30);
+            Renderer.DrawRich(g, s.BubbleSub, SubFont, gb, r.X + 24, r.Y + 22, r.Width - 30);
         }
     }
 
