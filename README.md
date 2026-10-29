@@ -41,6 +41,15 @@ back by himself.
 
 To remove it: `powershell -ExecutionPolicy Bypass -File uninstall.ps1` (your XP and unlocks are kept).
 
+## Updating
+
+Buddy checks GitHub for a new version once a day. When one is out, he tells you in a speech bubble.
+Right-click him → **Update to vX.Y.Z** and say yes. A PowerShell window downloads the new version and
+buddy restarts. Your XP, unlocks and hooks are kept. You can also check any time from the menu
+(**Check for updates**) or by typing `update` in his console.
+
+On **v0.1.0**, which had no updater, run the install line above once more to update.
+
 ## Features
 
 - **Knows what Claude Code is doing:**
@@ -50,7 +59,12 @@ To remove it: `powershell -ExecutionPolicy Bypass -File uninstall.ps1` (your XP 
 - **Two sessions at once?** A blue friend appears, and each buddy follows its own session.
 - **XP and levels** from finished sessions, petting, cookies and games.
 - **Unlockable skins and hats** (right-click → Skins / Hats), including secret ones.
-- **Copycat:** a memory game (double-click buddy).
+- **His room** (double-click buddy): he wanders around, works at his desk while Claude runs and
+  sleeps in bed. Unlock furniture as you level up (a plant, lamp, bookshelf, record player, fish
+  tank, arcade cabinet, neon sign, and Byte the cat) and new rooms: Greenhouse, Space Station and
+  a secret Beach Hut.
+- **Games:** Bug Catch (catch falling bugs, dodge the errors) and Copycat (a memory game). Both are under
+  **Play** in the room.
 - **Personality:**
   - Eyes that follow your cursor.
   - Idle routines: juggling, whistling, sneezing, coffee.
@@ -67,12 +81,12 @@ To remove it: `powershell -ExecutionPolicy Bypass -File uninstall.ps1` (your XP 
 | Do this | And buddy… |
 |---|---|
 | Click | giggles (and earns XP) |
-| Double-click | plays Copycat |
+| Double-click | opens his room |
 | Click 5 times fast | gets dizzy |
 | Drag | moves; flick hard to fling him |
 | Click and hold | squishes |
 | Wiggle the cursor on him | is tickled |
-| Right-click | opens the menu: feed, skins, hats, console, trophies, honk, medicine, sounds, start with Windows |
+| Right-click | opens the menu: room, feed, skins, hats, rooms, games, console, trophies, honk, medicine, sounds, start with Windows, updates |
 
 ## How it works
 
@@ -83,7 +97,8 @@ Claude Code ──hooks──▶ hook.ps1 ──appends a JSON line──▶ %US
 ```
 
 `hook.ps1` only writes the event name, session ID, working folder and notification message
-to a local file. Nothing leaves your PC.
+to a local file. None of that leaves your PC. The only network request buddy makes is the daily
+update check, which asks GitHub's public API for the latest release number.
 
 ## Develop
 
@@ -91,11 +106,12 @@ to a local file. Nothing leaves your PC.
 dotnet run --project src
 ```
 
-It's plain WinForms + GDI+ with no dependencies. Every push is built on GitHub Actions, and tagged
-versions (`v*`) publish `ClaudeBuddy.exe` to Releases.
+It's plain WinForms + GDI+ with no dependencies. Every push is built on GitHub Actions. The build
+also runs a self-test (`ClaudeBuddy.exe --self-test <folder>`) that opens every screen of the room
+and saves a screenshot of each. Tagged versions (`v*`) publish `ClaudeBuddy.exe` to Releases, and
+the updater picks them up from there.
 
-PRs with new hats, games and secrets are very welcome. The Mac version also has a room to visit and
-Bug Catch, and help porting those is wanted.
+PRs with new hats, games and secrets are very welcome.
 
 ## License
 
