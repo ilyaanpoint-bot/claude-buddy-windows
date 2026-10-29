@@ -18,8 +18,42 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Check the PowerShell scripts parse
+        shell: pwsh
+        run: |
+          foreach ($f in "install.ps1", "uninstall.ps1", "hook.ps1") {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | Out-Host; throw "$f has syntax errors" }
+          }
       - name: Build ClaudeBuddy.exe
-        run: dotnet publish src/ClaudeBuddy.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out
+        shell: pwsh
+        run: |
+          # A tag like v0.2.0 sets the app's version, so the in-app updater can compare it.
+          $version = if ("${{ github.ref }}" -like "refs/tags/v*") { "${{ github.ref_name }}".Substring(1) } else { "" }
+          $extra = if ($version) { @("-p:Version=$version") } else { @() }
+          dotnet publish src/ClaudeBuddy.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out @extra
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Smoke test (starts and stays running)
+        shell: pwsh
+        run: |
+          $p = Start-Process out/ClaudeBuddy.exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { Get-Content "$env:USERPROFILE/.claude/claude-buddy/error.log" -ErrorAction SilentlyContinue; throw "ClaudeBuddy.exe exited with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          if (Test-Path "$env:USERPROFILE/.claude/claude-buddy/error.log") { Get-Content "$env:USERPROFILE/.claude/claude-buddy/error.log"; throw "errors were logged" }
+      - name: Self-test (opens every room screen and screenshots it)
+        shell: pwsh
+        run: |
+          $p = Start-Process out/ClaudeBuddy.exe -ArgumentList "--self-test", "$pwd/self-test" -PassThru
+          if (-not $p.WaitForExit(90000)) { Stop-Process -Id $p.Id -Force; throw "self-test timed out" }
+          Get-Content "$env:USERPROFILE/.claude/claude-buddy/error.log" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "self-test failed with code $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: self-test-screenshots
+          path: self-test/
       - uses: actions/upload-artifact@v4
         with:
           name: ClaudeBuddy

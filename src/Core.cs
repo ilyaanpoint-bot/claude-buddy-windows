@@ -41,7 +41,7 @@ static class Palette
 }
 
 enum Mood { Idle, Working, Attention }
-enum ItemKind { Skin, Hat }
+enum ItemKind { Skin, Hat, Room, Decor }
 
 record Item(string Id, ItemKind Kind, string Name, int? Level, string Hint);
 record Achievement(string Id, string Name, string Hint, int Xp);
@@ -72,6 +72,22 @@ static class Catalog
         new("nightcap", ItemKind.Hat, "Nightcap", null, "Keep poking a sleeping buddy."),
         new("horns", ItemKind.Hat, "Devil horns", null, "Defuse 5 bombs in one tantrum."),
         new("headband", ItemKind.Hat, "Headband", null, "Reach round 8 in Copycat."),
+
+        new("studio", ItemKind.Room, "Cozy Studio", 1, ""),
+        new("greenhouse", ItemKind.Room, "Greenhouse", 7, ""),
+        new("space", ItemKind.Room, "Space Station", 11, ""),
+        new("beach", ItemKind.Room, "Beach Hut", null, "Score 20 in Bug Catch."),
+
+        new("plant", ItemKind.Decor, "Plant", 2, ""),
+        new("poster", ItemKind.Decor, "Poster", 3, ""),
+        new("lamp", ItemKind.Decor, "Desk lamp", 4, ""),
+        new("shelf", ItemKind.Decor, "Bookshelf", 5, ""),
+        new("rug", ItemKind.Decor, "Rug", 6, ""),
+        new("fishtank", ItemKind.Decor, "Fish tank", 8, ""),
+        new("records", ItemKind.Decor, "Record player", 10, ""),
+        new("arcade", ItemKind.Decor, "Arcade cabinet", 13, ""),
+        new("neon", ItemKind.Decor, "Neon sign", 14, ""),
+        new("cat", ItemKind.Decor, "Byte the cat", 18, ""),
     };
 
     public static readonly Achievement[] Achievements =
@@ -84,6 +100,7 @@ static class Catalog
         new("grumpy", "Five More Minutes", "Bother buddy while it sleeps.", 30),
         new("night", "Night Shift", "Finish a session between midnight and 5am.", 50),
         new("marathon", "Marathon", "Finish 10 sessions in one day.", 100),
+        new("squasher", "Bug Squasher", "Score 20 in Bug Catch.", 50),
         new("xyzzy", "Adventurer", "An old magic word.", 20),
         new("rage", "Unleashed", "Push buddy over the edge.", 60),
         new("defuse", "Bomb Squad", "Defuse 5 bombs in one tantrum.", 60),
@@ -105,10 +122,12 @@ class SaveData
     public List<string> Achievements { get; set; } = new();
     public string Skin { get; set; } = "classic";
     public string Hat { get; set; } = "none";
+    public string Room { get; set; } = "studio";
     public int Cookies { get; set; }
     public int Sessions { get; set; }
     public int Pets { get; set; }
     public int BestCopycat { get; set; }
+    public int BestScore { get; set; }
     public string Day { get; set; } = "";
     public int ToolXpToday { get; set; }
     public int CookiesToday { get; set; }
@@ -116,6 +135,7 @@ class SaveData
     public bool Muted { get; set; }
     public int? X { get; set; }
     public int? Y { get; set; }
+    public string LastUpdateCheck { get; set; } = "";
 }
 
 class Progress
@@ -140,7 +160,13 @@ class Progress
         get { int l = 1; while (Data.Xp >= XpNeeded(l + 1)) l++; return l; }
     }
 
+    public double LevelFraction
+    {
+        get { int lo = XpNeeded(Level), hi = XpNeeded(Level + 1); return (double)(Data.Xp - lo) / (hi - lo); }
+    }
+
     public bool IsUnlocked(Item it) => it.Level is int l ? Level >= l : Data.Unlocked.Contains(it.Id);
+    public bool Has(string id) => Catalog.Find(id) is Item it && IsUnlocked(it);
     public bool HasAchievement(string id) => Data.Achievements.Contains(id);
 
     public void Award(int xp)
@@ -170,7 +196,10 @@ class Progress
     public void Equip(Item it)
     {
         if (!IsUnlocked(it)) return;
-        if (it.Kind == ItemKind.Skin) Data.Skin = it.Id; else Data.Hat = it.Id;
+        if (it.Kind == ItemKind.Skin) Data.Skin = it.Id;
+        else if (it.Kind == ItemKind.Hat) Data.Hat = it.Id;
+        else if (it.Kind == ItemKind.Room) Data.Room = it.Id;
+        else return;
         Save();
     }
 
@@ -213,6 +242,14 @@ class Progress
     }
 
     public void Petted() { Data.Pets++; Award(1); }
+
+    public void GameOver(int score)
+    {
+        if (score > Data.BestScore) Data.BestScore = score;
+        if (score >= 20) Achieve("squasher", "beach");
+        Award(Math.Min(60, Math.Max(0, score)));
+        Save();
+    }
 
     public void Save()
     {

@@ -106,5 +106,10 @@ static class Synth
     public static void Whistle() => Play(new[] { 784.0, 988, 880, 1175, 988 }.Select(f => new Note(f * 1.5, f * 1.52, 0.16, Wave.Sine, 0.18, 0.02)).ToArray());
     public static void Thud() => Play(new Note(140, 60, 0.12, Wave.Sine, 0.5));
     public static void Pad(int i) { double f = new[] { 392.0, 523, 659, 784 }[i]; Play(new Note(f, f, 0.3, Wave.Triangle, 0.4)); }
+    public static void Pop() => Play(new Note(380, 950, 0.05, Wave.Sine, 0.35));
+    public static void CatchBug(bool golden) => Play(new Note(golden ? 1200 : 800, golden ? 2400 : 1400, 0.07, Wave.Square, 0.15));
+    public static void Ouch() => Play(new Note(300, 120, 0.18, Wave.Square, 0.18));
+    public static void GameOver() => Play(Arp(new[] { 784.0, 659, 523, 392 }, 0.12, last: 0.35));
+    public static void Meow() => Play(new Note(700, 1100, 0.12, Wave.Triangle, 0.25), new Note(1100, 600, 0.22, Wave.Triangle, 0.25));
     public static void Buzz() => Play(new Note(110, 100, 0.6, Wave.Square, 0.2));
 }
