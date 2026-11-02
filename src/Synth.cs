@@ -47,7 +47,7 @@ static class Synth
                     _ => Rng.NextDouble() * 2 - 1,
                 };
                 double env = Math.Min(1, x * 25) * Math.Pow(1 - x, 1.4);
-                pcm[i] = (short)Math.Clamp(s * env * n.Vol * 0.5 * short.MaxValue, short.MinValue, short.MaxValue);
+                pcm[i] = (short)Math.Clamp(s * env * n.Vol * 0.5 * Math.Clamp(Progress.Shared.Data.Volume, 0, 1) * short.MaxValue, short.MinValue, short.MaxValue);
             }
             i += (int)(n.Gap * sr);
         }
@@ -74,12 +74,15 @@ static class Synth
 
     public static void Chirp() => Play(new Note(700, 1300, 0.09));
     public static void Giggle(double p = 1) => Play(new[] { 900.0, 1000, 1150 }.Select(f => new Note(f * p, f * 1.3 * p, 0.06, Gap: 0.025)).ToArray());
-    public static void Babble(string text, double pitch = 1) =>
+    public static void Babble(string text, double pitch = 1)
+    {
+        if (Progress.Shared.Data.Quiet) return;
         Play(Enumerable.Range(0, Math.Clamp(text.Length / 3, 2, 9)).Select(_ =>
         {
             double f = 380 * pitch * (0.85 + Rng.NextDouble() * 0.4);
             return new Note(f, f * (0.9 + Rng.NextDouble() * 0.25), 0.05, Wave.Square, 0.13, 0.022);
         }).ToArray());
+    }
     public static void Done(double p = 1) => Play(Arp(new[] { 523 * p, 659 * p, 784 * p, 1047 * p }, 0.09, last: 0.3));
     public static void LevelUp() => Play(Arp(new[] { 523.0, 659, 784, 1047, 1319, 1568 }, 0.07, Wave.Square, 0.18).Append(new Note(2093, 2093, 0.45, Wave.Triangle, 0.35)).ToArray());
     public static void Unlock() => Play(Arp(new[] { 1568.0, 2093, 2637 }, 0.06, vol: 0.3, last: 0.25));
@@ -111,5 +114,10 @@ static class Synth
     public static void Ouch() => Play(new Note(300, 120, 0.18, Wave.Square, 0.18));
     public static void GameOver() => Play(Arp(new[] { 784.0, 659, 523, 392 }, 0.12, last: 0.35));
     public static void Meow() => Play(new Note(700, 1100, 0.12, Wave.Triangle, 0.25), new Note(1100, 600, 0.22, Wave.Triangle, 0.25));
+    public static void Coin() => Play(new Note(988, 988, 0.06, Wave.Square, 0.14), new Note(1319, 1319, 0.16, Wave.Square, 0.14));
+    public static void Whack() => Play(new Note(260, 90, 0.08, Wave.Noise, 0.35), new Note(520, 900, 0.06, Wave.Square, 0.12));
+    public static void Flap() => Play(new Note(420, 760, 0.07, Wave.Triangle, 0.25));
+    public static void TypeKey() => Play(new Note(1800, 1500, 0.02, Wave.Square, 0.06));
+    public static void Tick() => Play(new Note(1400, 1400, 0.02, Wave.Sine, 0.2));
     public static void Buzz() => Play(new Note(110, 100, 0.6, Wave.Square, 0.2));
 }

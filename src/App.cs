@@ -53,6 +53,7 @@ class Session
     public string Project = "";
     public DateTime Updated = DateTime.Now;
     public int Slot;
+    public DateTime? Started;
 }
 
 class BuddyApp
@@ -67,8 +68,11 @@ class BuddyApp
     string _partial = "";
     double _testFriendUntil = -100, _lastPetXp = -100, _lastTick = Clock.Now;
     int _sleepPokes;
-    CopycatForm _copycat;
     ConsoleForm _console;
+    SettingsForm _settings;
+    DateTime? _hiddenUntil;
+    double _focusStart, _focusEnd = -1;
+    int _focusMinutes, _frame;
     RoomForm _room;
     bool _selfTesting;
 
@@ -88,7 +92,9 @@ class BuddyApp
         _comeBack = comeBack;
         Directory.CreateDirectory(Paths.Dir);
         if (!File.Exists(Paths.Events)) File.WriteAllText(Paths.Events, "");
+        if (new FileInfo(Paths.Events).Length > 256_000) try { File.WriteAllText(Paths.Events, ""); } catch { }
         _offset = new FileInfo(Paths.Events).Length;
+        _progress.Migrate();
 
         Corner.Load += (_, _) =>
         {
@@ -105,13 +111,14 @@ class BuddyApp
         Corner.OnFlick = Flick;
         Corner.OnSquishRelease = (i, amt) => { if (i == 0) SquishReleased(amt); };
         Corner.MenuProvider = MakeMenu;
+        Corner.FocusProvider = FocusStatus;
 
         _progress.OnLevelUp = (level, items) =>
         {
             var names = string.Join(", ", items.Select(i => i.Name));
-            Corner.Say(0, $"Level up! Lv {level} 🎉", names.Length == 0 ? "Keep it up!" : "Unlocked: " + names, 10, false);
+            Corner.Say(0, $"Level up! Lv {level} 🎉", names.Length == 0 ? "+20 🪙 · keep it up!" : "Unlocked: " + names, 10, false);
             Buddy.Love(); Buddy.Celebrate(); Synth.LevelUp();
-            _room?.ShowToast($"Level {level}!" + (names.Length == 0 ? "" : " Unlocked: " + names));
+            _room?.ShowToast($"Level {level}! +20 🪙" + (names.Length == 0 ? "" : " · Unlocked: " + names));
         };
         _progress.OnAchievement = (a, it) =>
         {
@@ -119,6 +126,14 @@ class BuddyApp
             _room?.ShowToast("🏆 " + a.Name + " · " + (it != null ? "Secret unlocked: " + it.Name : $"+{a.Xp} XP"));
             Synth.Unlock();
         };
+        _progress.OnQuest = (q, sweep) =>
+        {
+            Synth.Coin();
+            var msg = sweep ? $"All quests done! +{q.Coins + 25} 🪙" : $"Quest done: {q.Text} · +{q.Coins} 🪙";
+            _room?.ShowToast("📋 " + msg);
+            if (_room is not { Visible: true }) Corner.Say(0, "📋 Quest complete!", msg, 6, false);
+        };
+        _progress.OnStreak = (days, coins) => { if (days > 1) After(7, () => Corner.Say(0, $"🔥 {days}-day streak!", $"+{coins} 🪙 for coming back", 6, false)); };
         _rage.OnDefuse = () => _progress.Award(2);
         _rage.OnFinished = EndRage;
 
@@ -134,7 +149,12 @@ class BuddyApp
         poll.Tick += (_, _) => { try { ReadEvents(); } catch (Exception e) { Program.Log(e); } };
         poll.Start();
 
-        Corner.Shown += (_, _) => Corner.Say(0, $"Hi! Lv {_progress.Level} buddy reporting 👋", "Double-click me to visit my room", 6);
+        Corner.Shown += (_, _) =>
+        {
+            _progress.RollDay();
+            if (_progress.WelcomeGift > 0) Corner.Say(0, "Buddy 2.0 is here! 🎉", $"Here's 🪙{_progress.WelcomeGift} for the new shop. Double-click me!", 12);
+            else Corner.Say(0, $"Hi! Lv {_progress.Level} {_progress.Data.Name} reporting 👋", "Double-click me to visit my room", 6);
+        };
         After(8, () => { if (!_selfTesting) Updater.Check(this, manual: false); });
     }
 
@@ -185,20 +205,27 @@ class BuddyApp
         }
         UpdateMoods();
         FunTick();
+        FocusTick();
+        if (_hiddenUntil is DateTime hu && DateTime.Now >= hu) Unhide();
 
         bool lateNight = DateTime.Now.Hour < 6;
         foreach (var s in Corner.Slots)
         {
             if (!s.Present || s.Anim.Asleep) continue;
-            if (s.Anim.Mood == Mood.Idle && !s.Anim.IsCelebrating && !s.Anim.Devil && !s.Anim.Flying && Clock.Now - s.LastActivity > (lateNight ? 180 : 600))
+            if (s.Anim.Mood == Mood.Idle && !s.Anim.IsCelebrating && !s.Anim.Devil && !s.Anim.Flying && _focusEnd < 0 && Clock.Now - s.LastActivity > (lateNight ? 180 : 600))
             {
                 s.Anim.Asleep = true; _sleepPokes = 0; Synth.Yawn();
             }
         }
         // If buddy ended up somewhere you can't see (a display got unplugged), bring him back.
-        if (_flyVel == null && !Screen.AllScreens.Any(sc => sc.WorkingArea.IntersectsWith(new Rectangle(Corner.Right - 90, Corner.Bottom - 90, 80, 80)))) ComeBack();
+        if (_hiddenUntil == null && _flyVel == null && !Screen.AllScreens.Any(sc => sc.WorkingArea.IntersectsWith(new Rectangle(Corner.Right - 90, Corner.Bottom - 90, 80, 80)))) ComeBack();
         Corner.CheckDoubleClick();
-        Corner.Render();
+        // Full speed only while something lively is happening; 30 fps otherwise, 15 when everyone's asleep.
+        _frame++;
+        var near = Corner.Bounds; near.Inflate(20, 20);
+        bool lively = near.Contains(Cursor.Position) || _flyVel != null || _raging || Corner.Slots.Any(s => s.Anim.Dragging || s.Anim.IsCelebrating);
+        bool asleep = Corner.Slots.All(s => !s.Present || s.Anim.Asleep);
+        if (_hiddenUntil == null && _frame % (lively ? 1 : asleep ? 4 : 2) == 0) Corner.Render();
     }
 
     void UpdateMoods()
@@ -269,20 +296,23 @@ class BuddyApp
         int i = s.Slot;
         switch (ev)
         {
-            case "prompt": s.Mood = Mood.Working; _progress.Award(3); break;
-            case "tool": s.Mood = Mood.Working; _progress.ToolUsed(); break;
+            case "prompt": if (s.Mood != Mood.Working || s.Started == null) s.Started = DateTime.Now; s.Mood = Mood.Working; _progress.Award(3); break;
+            case "tool": s.Started ??= DateTime.Now; s.Mood = Mood.Working; _progress.ToolUsed(); break;
             case "stop":
+                var took = s.Started is DateTime st ? DateTime.Now - st : (TimeSpan?)null;
                 s.Mood = Mood.Idle;
+                s.Started = null;
                 Wake(i);
                 Corner.Slots[i].Anim.Celebrate();
                 Synth.Done(i == 0 ? 1 : 1.25);
-                int xp = _progress.SessionFinished();
-                Corner.Say(i, "All done! ✨", $"{project} · +{xp} XP", 9, false);
+                var (xp, coins) = _progress.SessionFinished();
+                Corner.Say(i, "All done! ✨", $"{project}{(took is TimeSpan ts ? " · " + Duration(ts) : "")} · +{xp} XP +{coins} 🪙", 9, false);
                 break;
             case "notify":
                 var msg = Get("message");
                 if (Get("type") == "idle_prompt" || msg.Contains("waiting for your input", StringComparison.OrdinalIgnoreCase)) return;
                 s.Mood = Mood.Attention;
+                if (_hiddenUntil != null) Unhide();
                 Corner.Say(i, msg.Contains("permission", StringComparison.OrdinalIgnoreCase) ? "Needs your permission" : "Needs your attention", project, 14, false);
                 Synth.Boop();
                 break;
@@ -322,7 +352,7 @@ class BuddyApp
         s.Anim.Pet();
         Synth.Giggle(i == 0 ? 1 : 1.25);
         if (t - _lastPetXp > 2) { _lastPetXp = t; _progress.Petted(); }
-        if (Rng.Next(5) == 0) Corner.Say(i, Pick("hehe", "that tickles!", "hi!! 👋", "boop!", "*happy noises*", "you're the best"), "", 2.5);
+        if (!_progress.Data.Quiet && Rng.Next(5) == 0) Corner.Say(i, Pick("hehe", "that tickles!", "hi!! 👋", "boop!", "*happy noises*", "you're the best"), "", 2.5);
     }
 
     void DizzyClicks(int i)
@@ -573,7 +603,7 @@ class BuddyApp
             else if (a == IdleAnim.Yawn) Synth.Yawn();
             else if (a == IdleAnim.Sneeze) After(1.1, Synth.Sneeze);
             else if (a == IdleAnim.Hop) Synth.Boing();
-            if (Rng.Next(3) == 0)
+            if (!_progress.Data.NoThoughts && !_progress.Data.Quiet && Rng.Next(3) == 0)
             {
                 var pool = new List<string> { "is a hotdog a sandwich? 🌭", "I wonder if bugs have feelings 🐞", "semicolons are just winking periods ;)",
                     "I could really go for a cookie 🍪", "do you think Claude dreams in markdown?", "I just counted my rays. still 12.",
@@ -588,19 +618,69 @@ class BuddyApp
 
     // MARK: Windows
 
-    void OpenCopycat()
+    static string Duration(TimeSpan d) =>
+        d.TotalSeconds < 60 ? $"{(int)d.TotalSeconds}s" : d.TotalHours < 1 ? $"{(int)d.TotalMinutes}m {d.Seconds}s" : $"{(int)d.TotalHours}h {d.Minutes}m";
+
+    // MARK: Hiding and focus
+
+    void Hide(TimeSpan span) { _hiddenUntil = DateTime.Now + span; Corner.Hide(); }
+
+    void Unhide()
     {
-        if (_copycat is { IsDisposed: false }) { _copycat.Activate(); return; }
-        _copycat = new CopycatForm(Buddy);
-        _copycat.OnEnd = score =>
-        {
-            if (score > _progress.Data.BestCopycat) _progress.Data.BestCopycat = score;
-            _progress.Award(Math.Min(60, score * 3));
-            if (score + 1 >= 8) _progress.Achieve("copycat", "headband");
-            _progress.Save();
-        };
-        _copycat.Show();
+        _hiddenUntil = null;
+        Corner.Show();
+        Wake(0);
+        Buddy.StartIdle(IdleAnim.Wave);
     }
+
+    void StartFocus(int minutes)
+    {
+        _focusMinutes = minutes; _focusStart = Clock.Now; _focusEnd = Clock.Now + minutes * 60;
+        Wake(0); Buddy.StartIdle(IdleAnim.Coffee); Synth.Tick();
+        Corner.Say(0, $"Focus time! 🍅 {minutes} minutes", "I'll keep watch. You've got this.", 5);
+    }
+
+    void StopFocus()
+    {
+        if (_focusEnd < 0) return;
+        _focusEnd = -1;
+        Corner.Say(0, "Focus timer stopped", "No worries, try again later!", 4);
+    }
+
+    void FocusTick()
+    {
+        if (_focusEnd < 0 || Clock.Now < _focusEnd) return;
+        _focusEnd = -1;
+        var (xp, coins) = _progress.FocusFinished(_focusMinutes);
+        if (_hiddenUntil != null) Unhide();
+        Wake(0); Buddy.Celebrate(); Buddy.Love(); Synth.LevelUp();
+        Corner.Say(0, "Focus session done! 🍅🎉", $"Take a 5-minute break · +{xp} XP +{coins} 🪙", 14, false);
+    }
+
+    (string label, float frac)? FocusStatus()
+    {
+        if (_focusEnd < 0) return null;
+        double left = Math.Max(0, _focusEnd - Clock.Now);
+        return ($"{(int)left / 60}:{(int)left % 60:00}", (float)(1 - left / Math.Max(1, _focusEnd - _focusStart)));
+    }
+
+    void ApplyScale(double _)
+    {
+        var br = new Point(Corner.Right, Corner.Bottom);
+        Corner.Size = new Size((int)(CornerWindow.W * Corner.DpiScale), (int)(CornerWindow.H * Corner.DpiScale));
+        Corner.Location = new Point(br.X - Corner.Width, br.Y - Corner.Height);
+        SavePosition();
+        Corner.Render();
+    }
+
+    void OpenSettings()
+    {
+        if (_settings is { IsDisposed: false }) { _settings.Activate(); return; }
+        _settings = new SettingsForm(ApplyScale, () => StartsWithWindows, ToggleStartup, ComeBack);
+        _settings.Show();
+    }
+
+    // MARK: Windows
 
     void OpenRoom() => OpenRoom(RoomForm.Overlay.None);
 
@@ -613,16 +693,20 @@ class BuddyApp
                 OnPoke = () => Poke(0),
                 OnFeed = FeedCookie,
                 OnMedicine = GiveMedicine,
-                OnCopycat = OpenCopycat,
                 OnCommand = Command,
-                OnGameOver = _progress.GameOver,
+                OnGameFinish = _progress.FinishGame,
+                MenuProvider = MakeMenu,
             };
         }
+        if (DateTime.Now.Hour == 3) _progress.Achieve("witching", "shadow");
+        _progress.RollDay();
         _room.Show();
         if (_room.WindowState == FormWindowState.Minimized) _room.WindowState = FormWindowState.Normal;
         _room.Activate();
         if (overlay != RoomForm.Overlay.None && _room.Current != overlay) _room.Open(overlay);
     }
+
+    void Play(string game) { OpenRoom(); _room.StartGame(game); }
 
     /// CI check: unlocks everything, opens every screen of the room, saves a screenshot of
     /// each into `dir`, then quits (exit code 1 if anything logged an error).
@@ -632,31 +716,55 @@ class BuddyApp
         Directory.CreateDirectory(dir);
         var d = _progress.Data;
         d.Xp = 100_000;
-        foreach (var it in Catalog.Items) if (!d.Unlocked.Contains(it.Id)) d.Unlocked.Add(it.Id);
+        d.Coins = 120;
+        foreach (var it in Catalog.Items.Where(i => i.Price == null)) if (!d.Unlocked.Contains(it.Id)) d.Unlocked.Add(it.Id);
+        d.Owned.AddRange(new[] { "disco", "lights", "beanbag", "lavalamp", "clock", "trophycase" });
         d.Achievements.AddRange(Catalog.Achievements.Take(6).Select(a => a.Id));
+        d.Accessory = "sunglasses";
         var steps = new List<(string name, Action act)>
         {
             ("room-studio", () => OpenRoom()),
             ("room-working", () => { _testFriendUntil = 0; _sessions["selftest"] = new Session { Mood = Mood.Working }; }),
-            ("room-greenhouse", () => { _sessions.Clear(); d.Room = "greenhouse"; }),
-            ("room-space", () => d.Room = "space"),
-            ("room-beach", () => { d.Room = "beach"; _room.Say("hi from the beach! 🏖️"); _room.ShowToast("🏆 Bug Squasher · +50 XP"); }),
-            ("wardrobe-skins", () => { d.Room = "studio"; _room.Open(RoomForm.Overlay.Wardrobe); }),
-            ("wardrobe-hats", () => _room.SelectTab(1)),
-            ("wardrobe-rooms", () => _room.SelectTab(2)),
-            ("wardrobe-trophies", () => _room.SelectTab(3)),
+            ("room-cabin", () => { _sessions.Clear(); d.Room = "cabin"; }),
+            ("room-synthwave", () => { d.Owned.Add("synthwave"); d.Room = "synthwave"; }),
+            ("room-reef", () => { d.Owned.Add("reef"); d.Room = "reef"; _room.Say("hi fishies! 🐠"); _room.ShowToast("🏆 Bug Squasher · +50 XP"); }),
+            ("style-skins", () => { d.Room = "studio"; _room.Open(RoomForm.Overlay.Style); }),
+            ("style-skins-2", () => _room.SetPage(1)),
+            ("style-hats", () => _room.SelectTab(1)),
+            ("style-extras", () => _room.SelectTab(2)),
+            ("style-rooms", () => _room.SelectTab(3)),
+            ("style-walls", () => _room.SelectTab(4)),
+            ("style-floors", () => _room.SelectTab(5)),
+            ("style-decor", () => _room.SelectTab(6)),
+            ("style-trophies", () => _room.SelectTab(7)),
+            ("shop", () => _room.Open(RoomForm.Overlay.Shop)),
+            ("shop-buy", () => _room.SetPending("halo")),
+            ("shop-outfits", () => _room.SelectTab(3)),
+            ("quests", () => _room.Open(RoomForm.Overlay.Quests)),
+            ("arcade", () => _room.Open(RoomForm.Overlay.Arcade)),
+            ("edit", () => { _room.Open(RoomForm.Overlay.Edit); d.Hidden.Add("cactus"); }),
             ("console", () => { _room.Open(RoomForm.Overlay.Console); _room.RunCommand("help"); _room.RunCommand("stats"); }),
-            ("bugcatch", () => _room.Open(RoomForm.Overlay.Game)),
-            ("bugcatch-2", () => { }),
-            ("asleep", () => { _room.Open(RoomForm.Overlay.Game); Buddy.Asleep = true; }),
+            ("game-bugcatch", () => _room.StartGame("bugcatch")),
+            ("game-copycat", () => _room.StartGame("copycat")),
+            ("game-whack", () => _room.StartGame("whack")),
+            ("game-hop", () => _room.StartGame("hop")),
+            ("game-type", () => _room.StartGame("type")),
+            ("focus-corner", () => { _room.CloseGame(); _room.Hide(); StartFocus(25); }),
         };
         int i = 0;
         void Next()
         {
             if (i > 0)
             {
-                using var bmp = new Bitmap(_room.Width, _room.Height);
-                _room.DrawToBitmap(bmp, new Rectangle(0, 0, bmp.Width, bmp.Height));
+                Form target = steps[i - 1].name == "focus-corner" ? Corner : _room;
+                using var bmp = new Bitmap(Math.Max(1, target.Width), Math.Max(1, target.Height));
+                if (target == Corner)
+                {
+                    using var g = Graphics.FromImage(bmp);
+                    g.Clear(Color.White);
+                    g.CopyFromScreen(Corner.Location, Point.Empty, Corner.Size);
+                }
+                else target.DrawToBitmap(bmp, new Rectangle(0, 0, bmp.Width, bmp.Height));
                 bmp.Save(Path.Combine(dir, $"{i:00}-{steps[i - 1].name}.png"));
             }
             if (i == steps.Count)
@@ -666,7 +774,7 @@ class BuddyApp
             }
             try { steps[i].act(); } catch (Exception e) { Program.Log(e); }
             i++;
-            After(i == 11 || i == 12 ? 3 : 1.5, Next);
+            After(steps[i - 1].name.StartsWith("game-") ? 2.5 : 1.2, Next);
         }
         After(1, Next);
     }
@@ -681,6 +789,7 @@ class BuddyApp
     IEnumerable<string> Command(string raw)
     {
         var cmd = raw.ToLowerInvariant().Trim();
+        _progress.Track("console");
         string[] insults = { "bad buddy", "stupid", "dumb", "ugly", "i hate you", "you suck", "idiot", "loser", "useless" };
         if (insults.Any(x => cmd.Contains(x))) { Annoy(25); Buddy.Grumpy(); Synth.Grumble(); return new[] { Pick("RUDE. 😤", "excuse me?!", "I'm telling Claude.", "wow. okay. noted. 📝") }; }
         if (cmd.StartsWith("sudo"))
@@ -693,16 +802,39 @@ class BuddyApp
         if (cmd.StartsWith("wear "))
         {
             var name = cmd[5..];
-            var it = Catalog.Items.FirstOrDefault(x => (x.Id == name || x.Name.ToLowerInvariant() == name) && x.Kind != ItemKind.Decor);
+            var it = Catalog.Items.FirstOrDefault(x => (x.Id == name || x.Name.ToLowerInvariant() == name) && x.Kind is ItemKind.Skin or ItemKind.Hat or ItemKind.Accessory);
             if (it == null) return new[] { $"no item called '{name}'" };
             if (!_progress.IsUnlocked(it)) return new[] { $"🔒 {it.Name} is still locked" };
             _progress.Equip(it); Buddy.Celebrate(); Synth.Unlock();
             return new[] { $"now wearing {it.Name} ✨" };
         }
+        if (cmd.StartsWith("name ")) { _progress.SetName(raw.Trim()[5..]); Buddy.Love(); return new[] { $"call me {_progress.Data.Name}! 🥹" }; }
+        if (cmd.StartsWith("play "))
+        {
+            var q = cmd[5..];
+            var g = MiniGame.All.FirstOrDefault(x => x.Id == q || x.Name.ToLowerInvariant().StartsWith(q));
+            if (g == null) return new[] { "games: " + string.Join(", ", MiniGame.All.Select(x => x.Id)) };
+            After(0.05, () => Play(g.Id));
+            return new[] { $"{g.Icon} starting {g.Name}…" };
+        }
+        if (cmd.StartsWith("focus"))
+        {
+            if (cmd == "focus stop") { StopFocus(); return new[] { "⏹ focus timer stopped" }; }
+            int n = int.TryParse(cmd[5..].Trim(), out var v) ? Math.Clamp(v, 1, 120) : 25;
+            StartFocus(n);
+            return new[] { $"🍅 focusing for {n} minutes" };
+        }
         switch (cmd)
         {
             case "help": case "?":
-                return new[] { "commands: help feed pet dance sleep wake stats wear <item>", "  honk joke sorry meds mood juggle whistle read sneeze", "  yawn coffee wave room bugcatch copycat ls whoami clear exit", "(and a few secrets… 👀)" };
+                return new[] { "help feed pet dance sleep wake stats coins quests", "wear <item>  name <name>  play <game>  focus <min>", "shop style edit arcade settings honk joke sorry", "meds mood juggle whistle version update ls clear exit", "(and a few secrets… 👀)" };
+            case "coins": case "wallet": return new[] { $"🪙 {_progress.Data.Coins} coins" };
+            case "shop": After(0.05, () => OpenRoom(RoomForm.Overlay.Shop)); return new[] { "🛍️" };
+            case "style": case "wardrobe": After(0.05, () => OpenRoom(RoomForm.Overlay.Style)); return new[] { "👕" };
+            case "quests": After(0.05, () => OpenRoom(RoomForm.Overlay.Quests)); return new[] { "📋" };
+            case "edit": case "decorate": After(0.05, () => OpenRoom(RoomForm.Overlay.Edit)); return new[] { "🛠️" };
+            case "arcade": case "games": After(0.05, () => OpenRoom(RoomForm.Overlay.Arcade)); return new[] { "🕹️" };
+            case "settings": OpenSettings(); return new[] { "⚙️ opening settings" };
             case "boo": Wake(0); Buddy.Surprise(); Synth.Scream(); _progress.Achieve("boo", "ghost"); return new[] { "AAAAH! 👻", "…oh. it's you." };
             case "dance": Wake(0); Buddy.Dance(); Synth.Done(0.8); return new[] { "💃 *dances*" };
             case "feed": case "cookie": FeedCookie(); return new[] { "🍪" };
@@ -711,7 +843,7 @@ class BuddyApp
             case "wake": case "wake up": Wake(0); return new[] { "☀️ good morning!" };
             case "stats":
                 var d = _progress.Data;
-                return new[] { $"level {_progress.Level} · {d.Xp} XP", $"sessions {d.Sessions} · cookies {d.Cookies} · pets {d.Pets}", $"best bug catch {d.BestScore} · best copycat {d.BestCopycat}", $"trophies {d.Achievements.Count}/{Catalog.Achievements.Length}" };
+                return new[] { $"{d.Name} · level {_progress.Level} · {d.Xp} XP · 🪙 {d.Coins}", $"sessions {d.Sessions} · cookies {d.Cookies} · pets {d.Pets} · games {d.GamesPlayed}", $"trophies {d.Achievements.Count}/{Catalog.Achievements.Length} · streak {d.Streak} 🔥 · focus {d.FocusMinutes} min" };
             case "sorry": case "i'm sorry": case "im sorry": Calm(45); Buddy.Love(); return new[] { "…okay. I forgive you 🥺" };
             case "honk": Honk(); return new[] { "📯 HONK" };
             case "meds": case "medicine": GiveMedicine(); return new[] { "💊 here you go" };
@@ -728,9 +860,9 @@ class BuddyApp
                 if (cmd == "whistle") Synth.Whistle();
                 if (cmd == "sneeze") After(1.1, Synth.Sneeze);
                 return new[] { $"*{cmd}s*" };
-            case "copycat": OpenCopycat(); return new[] { "🎵 let's play!" };
+            case "copycat": After(0.05, () => Play("copycat")); return new[] { "🎵 let's play!" };
             case "room": OpenRoom(); return new[] { "🏠 welcome in!" };
-            case "bugcatch": case "bug catch": case "play": OpenRoom(RoomForm.Overlay.Game); return new[] { "🐞 catch 'em all!" };
+            case "bugcatch": case "bug catch": case "play": After(0.05, () => Play("bugcatch")); return new[] { "🐞 catch 'em all!" };
             case "version": return new[] { $"Claude Buddy v{Updater.CurrentText}" };
             case "update": Updater.Check(this, manual: true); return new[] { "checking for updates…" };
             case "xyzzy": _progress.Achieve("xyzzy"); return new[] { "Nothing happens.", "…or does it? ✨" };
@@ -749,23 +881,31 @@ class BuddyApp
     ContextMenuStrip MakeMenu()
     {
         var menu = new ContextMenuStrip();
-        void Add(string text, Action a, bool enabled = true, bool check = false)
+        ToolStripMenuItem Add(string text, Action a, bool enabled = true, bool check = false, ToolStripItemCollection to = null)
         {
             var it = new ToolStripMenuItem(text) { Enabled = enabled, Checked = check };
             it.Click += (_, _) => a();
-            menu.Items.Add(it);
+            (to ?? menu.Items).Add(it);
+            return it;
         }
-        Add($"Level {_progress.Level} · {_progress.Data.Xp} XP", () => { }, false);
+        var d = _progress.Data;
+        Add($"{d.Name} · Lv {_progress.Level} · 🪙 {d.Coins}", () => { }, false);
+        if (d.Streak > 1) Add($"🔥 {d.Streak}-day streak", () => { }, false);
         double anger = Buddy.Anger;
         Add(Buddy.Sick ? "Mood: sick 🤢" : anger > 70 ? "Mood: FURIOUS 😡" : anger > 35 ? "Mood: annoyed 😠" : "Mood: happy 😊", () => { }, false);
         menu.Items.Add(new ToolStripSeparator());
         Add("Visit buddy's room 🏠", OpenRoom);
+        var arcade = new ToolStripMenuItem("Arcade 🕹️");
+        foreach (var g in MiniGame.All) Add($"{g.Icon} {g.Name}", () => Play(g.Id), to: arcade.DropDownItems);
+        menu.Items.Add(arcade);
+        Add("Style…", () => OpenRoom(RoomForm.Overlay.Style));
+        Add("Shop…", () => OpenRoom(RoomForm.Overlay.Shop));
+        Add("Daily quests…", () => OpenRoom(RoomForm.Overlay.Quests));
         Add("Feed a cookie 🍪", FeedCookie);
-        menu.Items.Add(Wardrobe("Skins", ItemKind.Skin));
-        menu.Items.Add(Wardrobe("Hats", ItemKind.Hat));
-        menu.Items.Add(Wardrobe("Rooms", ItemKind.Room));
-        Add("Play Bug Catch 🐞", () => OpenRoom(RoomForm.Overlay.Game));
-        Add("Play Copycat 🎵", OpenCopycat);
+        var focus = new ToolStripMenuItem(_focusEnd < 0 ? "Focus timer 🍅" : "Focus timer 🍅 (running)");
+        if (FocusStatus() is { } fs) { Add($"{fs.label} left", () => { }, false, to: focus.DropDownItems); Add("Stop", StopFocus, to: focus.DropDownItems); }
+        else foreach (var m in new[] { 15, 25, 45, 60 }) Add($"{m} minutes", () => StartFocus(m), to: focus.DropDownItems);
+        menu.Items.Add(focus);
         Add("Console…", OpenConsole);
         Add("Trophies…", ShowTrophies);
         menu.Items.Add(new ToolStripSeparator());
@@ -773,36 +913,25 @@ class BuddyApp
         Add("Tease with a cookie 😈", TeaseCookie);
         Add("Give medicine 💊", GiveMedicine);
         menu.Items.Add(new ToolStripSeparator());
-        Add("Test celebration", () => { Wake(0); Buddy.Celebrate(); Synth.Done(); Corner.Say(0, "All done! ✨", "test-project", 8, false); });
-        Add("Test with friend", () =>
+        Add("Settings…", OpenSettings);
+        Add("Sounds", () => Synth.Muted = !Synth.Muted, check: !Synth.Muted);
+        Add("Start with Windows", ToggleStartup, check: StartsWithWindows);
+        Add("Hide for 1 hour", () => Hide(TimeSpan.FromHours(1)));
+        Add("Move back to corner", ComeBack);
+        var test = new ToolStripMenuItem("Test");
+        Add("Celebration", () => { Wake(0); Buddy.Celebrate(); Synth.Done(); Corner.Say(0, "All done! ✨", "test-project · 2m 14s", 8, false); }, to: test.DropDownItems);
+        Add("Second buddy", () =>
         {
             _testFriendUntil = Clock.Now + 12; UpdateMoods();
             Corner.Say(1, "Hi, I'm the second session!", "other-project", 4);
             After(2.5, () => { Corner.Slots[1].Anim.Celebrate(); Synth.Done(1.25); Corner.Say(1, "All done! ✨", "other-project", 8, false); });
-        });
-        Add("Test: tantrum 😈", Rage);
-        Add("Sounds", () => Synth.Muted = !Synth.Muted, check: !Synth.Muted);
-        Add("Start with Windows", ToggleStartup, check: StartsWithWindows);
-        Add("Move back to corner", ComeBack);
+        }, to: test.DropDownItems);
+        Add("Tantrum 😈", Rage, to: test.DropDownItems);
+        menu.Items.Add(test);
         Add(Updater.Available is string v ? $"Update to v{v} ✨" : $"Check for updates (v{Updater.CurrentText})", () => Updater.Check(this, manual: true));
         menu.Items.Add(new ToolStripSeparator());
         Add("Quit Claude Buddy", () => Application.Exit());
         return menu;
-    }
-
-    ToolStripMenuItem Wardrobe(string title, ItemKind kind)
-    {
-        var root = new ToolStripMenuItem(title);
-        foreach (var it in Catalog.Items.Where(x => x.Kind == kind))
-        {
-            bool unlocked = _progress.IsUnlocked(it);
-            bool wearing = (kind switch { ItemKind.Skin => _progress.Data.Skin, ItemKind.Hat => _progress.Data.Hat, _ => _progress.Data.Room }) == it.Id;
-            string label = unlocked ? it.Name : it.Level is int l ? $"🔒 {it.Name} (Lv {l})" : $"🔒 Secret — {it.Hint}";
-            var mi = new ToolStripMenuItem(label) { Checked = wearing, Enabled = unlocked };
-            mi.Click += (_, _) => { _progress.Equip(it); Buddy.Celebrate(); Synth.Unlock(); };
-            root.DropDownItems.Add(mi);
-        }
-        return root;
     }
 
     void ShowTrophies()
@@ -810,7 +939,7 @@ class BuddyApp
         var lines = Catalog.Achievements.Select(a => _progress.HasAchievement(a.Id) ? $"🏆 {a.Name} — {a.Hint}" : $"🔒 ??? — {a.Hint}");
         var d = _progress.Data;
         MessageBox.Show(string.Join(Environment.NewLine, lines) + Environment.NewLine + Environment.NewLine +
-                        $"Sessions: {d.Sessions}   Cookies: {d.Cookies}   Pets: {d.Pets}   Best Bug Catch: {d.BestScore}   Best Copycat: {d.BestCopycat}",
+                        $"Sessions: {d.Sessions}   Cookies: {d.Cookies}   Pets: {d.Pets}   Coins: {d.Coins}   Trophies: {d.Achievements.Count}/{Catalog.Achievements.Length}",
                         "Buddy's trophies", MessageBoxButtons.OK, MessageBoxIcon.None);
     }
 

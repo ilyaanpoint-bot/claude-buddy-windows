@@ -59,7 +59,9 @@ class CornerWindow : LayeredForm
     PointF Home(int i) => new(W - Slots[i].Inset, H - 44);
     bool BubbleVisible(int i) => Slots[i].Present && Clock.Now - Slots[i].BubbleAt < Slots[i].BubbleDuration;
 
-    public string SkinOf(int i) => i == 0 ? Progress.Shared.Data.Skin : "sky";
+    public string SkinOf(int i) => i == 0 ? Progress.Shared.Data.Skin : Progress.Shared.Data.FriendSkin;
+    public string AccessoryOf(int i) => i == 0 ? Progress.Shared.Data.Accessory : "none-acc";
+    public Func<(string label, float frac)?> FocusProvider;
     public string HatOf(int i) => i == 0 ? Progress.Shared.Data.Hat : "none";
 
     public void SetPresent(int i, bool present)
@@ -150,7 +152,8 @@ class CornerWindow : LayeredForm
                 float len = Math.Max(80, (float)Math.Sqrt(vx * vx + vy * vy));
                 var pose = s.Anim.GetPose(vx / len, vy / len);
                 pose.Sx *= appear; pose.Sy *= appear;
-                Renderer.Draw(g, SkinOf(i), HatOf(i), pose, h, 1);
+                if (i == 0 && FocusProvider?.Invoke() is { } fp) FocusRing(g, h, fp.label, fp.frac, !Slots[1].Present);
+                Renderer.Draw(g, SkinOf(i), HatOf(i), pose, h, 1, true, AccessoryOf(i));
                 if (s.Anim.Mood == Mood.Working && !s.Anim.IsCelebrating && !s.Anim.Asleep) ThinkingDots(g, i);
                 if (s.Anim.Mood == Mood.Attention && !s.Anim.Asleep)
                 {
@@ -173,6 +176,21 @@ class CornerWindow : LayeredForm
             return (float)(1 + 2.7 * Math.Pow(x - 1, 3) + 1.7 * Math.Pow(x - 1, 2));
         }
         return (float)Math.Max(0, 1 - e / 0.3);
+    }
+
+    static void FocusRing(Graphics g, PointF h, string label, float frac, bool showLabel)
+    {
+        const float r = 40;
+        using (var bg = new Pen(Color.FromArgb(64, 128, 128, 128), 3)) g.DrawEllipse(bg, h.X - r, h.Y - r, 2 * r, 2 * r);
+        using (var arc = new Pen(Palette.Rgb(0xE5395B, 230), 3) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawArc(arc, h.X - r, h.Y - r, 2 * r, 2 * r, -90, 360 * Math.Max(0.001f, frac));
+        if (!showLabel) return;
+        using var f = new Font("Segoe UI", 11, FontStyle.Bold, GraphicsUnit.Pixel);
+        string s = "🍅 " + label;
+        float w = Renderer.MeasureRich(g, s, f) + 14;
+        var box = new RectangleF(h.X - r - w - 6, h.Y - 10, w, 20);
+        using (var path = RoundRect(box, 10)) using (var b = new SolidBrush(Palette.Rgb(0x2B2D42, 230))) g.FillPath(b, path);
+        Renderer.DrawRich(g, s, f, Brushes.White, box.X + 7, box.Y + 3);
     }
 
     void ThinkingDots(Graphics g, int i)

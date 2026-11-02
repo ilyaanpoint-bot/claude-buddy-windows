@@ -32,7 +32,7 @@ class LayeredForm : Form
 
     protected override bool ShowWithoutActivation => true;
 
-    public float DpiScale => DeviceDpi / 96f;
+    public float DpiScale => DeviceDpi / 96f * (float)Math.Clamp(Progress.Shared.Data.Scale, 0.5, 2);
 
     /// Pushes a 32-bit ARGB bitmap (same size as the window) to the screen.
     public void Present(Bitmap bmp)

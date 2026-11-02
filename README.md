@@ -10,6 +10,19 @@ secrets, and quite a temper.
 > Unofficial fan project. Not affiliated with or endorsed by Anthropic. "Claude" is a trademark of Anthropic.
 > Looking for the Mac version? → [claude-buddy](https://github.com/ilyaanpoint-bot/claude-buddy)
 
+## What's new in 2.0
+
+- **Coins 🪙 and a shop** (furniture, wallpaper, floors, outfits, rooms) with a 30%-off deal every day.
+- **Daily quests and streaks.**
+- **Room editor (🛠️):** drag furniture around, put things away, pick wallpaper and floors.
+- **Arcade with 5 games:** Bug Catch, Copycat, and the new Whack-a-Bug, Buddy Hop and Type Rush (all inside the room now).
+- **More looks:** 11 new skins, 8 new hats, and accessories (sunglasses, glasses, bow tie, scarf, mustache, monocle…).
+- **New rooms:** Snowy Cabin, Synthwave, Coral Reef, plus 7 new pieces of furniture.
+- **Focus timer 🍅**, session times in the "All done" bubble, **Settings** (name, size, volume, quiet mode,
+  second buddy's skin, start with Windows) and **Hide for 1 hour**.
+
+Your XP, unlocks and scores carry over, plus a coin gift for upgrading. Already have buddy? Right-click him → **Update**.
+
 ## Install
 
 **Option 1: one line in PowerShell** (downloads the latest release):

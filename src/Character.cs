@@ -204,6 +204,15 @@ static class Renderer
         "ghost" => Color.FromArgb(140, 255, 255, 255),
         "devil" => Math.Sin(t * 9 + i * 1.7) > 0.2 ? C(0xF2862E) : C(0xE0402A),
         "slime" => C(0x7BD35B),
+        "bubblegum" => i % 2 == 0 ? C(0xFF8FC7) : C(0xFFB3D9),
+        "ocean" => Math.Sin(t * 2 - i * 0.8) > 0 ? C(0x2E9CCA) : C(0x5FD4E8),
+        "strawberry" => i % 3 == 0 ? C(0x5DBB63) : C(0xE5395B),
+        "panda" => i % 2 == 0 ? C(0x2B2B2B) : C(0xF2F2F2),
+        "lava" => Math.Sin(t * 5 + i * 1.3) > 0.3 ? C(0xFFB01F) : C(0xFF5A1F),
+        "robot" => i % 2 == 0 ? C(0x90A4AE) : C(0x607D8B),
+        "galaxy" => FromHsv(0.62 + 0.12 * Math.Sin(t * 0.8 + i * 0.5), 0.6, 0.95),
+        "cookie" => C(0xC48A4E),
+        "shadow" => C(0x3A2E5C),
         _ => Palette.Orange,
     };
 
@@ -214,8 +223,55 @@ static class Renderer
         "ghost" => Color.FromArgb(230, 247, 247, 247),
         "devil" => C(0xC8302B),
         "slime" => C(0x6CC24A, 242),
+        "bubblegum" => C(0xFF9ECF),
+        "ocean" => C(0x2E86C1),
+        "strawberry" => C(0xE5395B),
+        "panda" => C(0xF7F7F7),
+        "lava" => C(0xD84315),
+        "robot" => C(0xB0BEC5),
+        "galaxy" => C(0x1B1440),
+        "cookie" => C(0xD9A066),
+        "shadow" => C(0x15121F),
         _ => RayColor(skin, 0, t),
     };
+
+    static Color FaceInk(string skin) => skin switch { "midnight" or "galaxy" => C(0xE8EEFF), "shadow" => C(0xC9B6FF), _ => Palette.Face };
+
+    /// Patterns painted on the body, under the face (y-up body coordinates).
+    static void BodyDetail(Graphics g, string skin, double t)
+    {
+        switch (skin)
+        {
+            case "strawberry":
+                foreach (var (x, y) in new (float, float)[] { (-9, 8), (8, 9), (-11, -4), (11, -5), (-5, -11), (5, -12), (0, 12) }) Fill(g, C(0xFFE08A), x - 0.9f, y - 1.3f, 1.8f, 2.6f);
+                break;
+            case "cookie":
+                foreach (var (x, y) in new (float, float)[] { (-9, 7), (9, 8), (-10, -6), (10, -7), (0, -12), (-2, 11) }) Fill(g, C(0x5A3A24), x - 1.6f, y - 1.4f, 3.2f, 2.8f);
+                break;
+            case "galaxy":
+                for (int k = 0; k < 9; k++)
+                {
+                    float x = (k * 37) % 26 - 13, y = (k * 23) % 26 - 13;
+                    if (x * x + y * y >= 170) continue;
+                    Fill(g, Color.FromArgb((int)(255 * (0.35 + 0.6 * Math.Abs(Math.Sin(t * 1.7 + k)))), 255, 255, 255), x, y, 1.6f, 1.6f);
+                }
+                break;
+            case "panda":
+                foreach (var sx in new[] { -1f, 1f }) Fill(g, C(0x2B2B2B), sx * 5.8f - 4, -1.2f, 8, 7.6f);
+                break;
+            case "robot":
+                foreach (var (x, y) in new (float, float)[] { (-11, 6), (11, 6), (-11, -6), (11, -6) }) Fill(g, C(0x78909C), x - 1.3f, y - 1.3f, 2.6f, 2.6f);
+                Fill(g, C(0x00E5FF, (int)(255 * (0.5 + 0.5 * Math.Abs(Math.Sin(t * 3))))), -1.5f, 10.5f, 3, 3);
+                break;
+            case "lava":
+                using (var pen = RPen(C(0xFFB01F, (int)(255 * (0.5 + 0.4 * Math.Abs(Math.Sin(t * 2))))), 1))
+                {
+                    g.DrawLines(pen, new[] { new PointF(-12, -4), new PointF(-7, -7), new PointF(-4, -12) });
+                    g.DrawLines(pen, new[] { new PointF(12, 3), new PointF(8, -1), new PointF(10, -8) });
+                }
+                break;
+        }
+    }
 
     static Color FromHsv(double h, double s, double v)
     {
@@ -324,7 +380,7 @@ static class Renderer
     }
 
     /// Draws a buddy whose resting body centre is `c` (window pixels, y down) at `s` times natural size.
-    public static void Draw(Graphics g, string skin, string hat, Pose p, PointF c, float s, bool shadow = true)
+    public static void Draw(Graphics g, string skin, string hat, Pose p, PointF c, float s, bool shadow = true, string accessory = "none-acc")
     {
         double t = Clock.Now;
         skin = p.SkinOverride ?? skin;
@@ -354,6 +410,8 @@ static class Renderer
             }
         }
         if (skin == "midnight") Fill(g, C(0x6E8EF0, (int)(255 * (0.18 + 0.08 * Math.Sin(t * 2)))), -36, -36, 72, 72);
+        if (skin is "shadow" or "galaxy" or "lava")
+            Fill(g, C(skin == "shadow" ? 0x9C6BFFu : skin == "galaxy" ? 0x7B5CFFu : 0xFF7A1Fu, (int)(255 * (0.16 + 0.08 * Math.Sin(t * 2.4)))), -37, -37, 74, 74);
         if (skin == "devil")
         {
             Fill(g, C(0xFF5A1F, (int)(255 * (0.22 + 0.1 * Math.Sin(t * 7)))), -38, -38, 76, 76);
@@ -384,7 +442,9 @@ static class Renderer
 
         var st3 = g.Save();
         g.ScaleTransform(p.Sx, p.Sy);
-        Face(g, p, skin == "midnight" ? C(0xE8EEFF) : Palette.Face);
+        BodyDetail(g, skin, t);
+        Face(g, p, FaceInk(skin), skin == "panda" ? Color.White : null);
+        Accessory(g, accessory, t);
         Hat(g, hat, t);
         g.Restore(st3);
 
@@ -406,11 +466,12 @@ static class Renderer
 
     // MARK: Face (y-up body coordinates)
 
-    static void Face(Graphics g, Pose p, Color ink)
+    static void Face(Graphics g, Pose p, Color ink, Color? eye = null)
     {
         float lx = p.LookX * 2.2f, ly = p.LookY * 1.6f;
         using var inkB = new SolidBrush(ink);
-        void Eyes(float w, float h) { foreach (var sx in new[] { -1f, 1f }) g.FillEllipse(inkB, sx * 5.5f + lx - w / 2, 2.5f + ly - h / 2, w, h); }
+        using var eyeB = new SolidBrush(eye ?? ink);
+        void Eyes(float w, float h) { foreach (var sx in new[] { -1f, 1f }) g.FillEllipse(eyeB, sx * 5.5f + lx - w / 2, 2.5f + ly - h / 2, w, h); }
         void HappyEyes() { using var pen = RPen(ink, 2.2f); foreach (var sx in new[] { -1f, 1f }) g.DrawLines(pen, new[] { new PointF(sx * 5.5f - 3, 1), new PointF(sx * 5.5f, 4.5f), new PointF(sx * 5.5f + 3, 1) }); }
         void Grin(float open = 0) { using var path = new GraphicsPath(); float r = 5 + open; path.AddArc(-r, -3 - r, 2 * r, 2 * r, 190, 160); path.CloseFigure(); g.FillPath(inkB, path); }
         void Cheeks() { foreach (var sx in new[] { -1f, 1f }) Fill(g, C(0xFF7FA0, 153), sx * 9.5f - 3, -4.5f, 6, 3.5f); }
@@ -654,6 +715,143 @@ static class Renderer
                 g.FillRectangle(Brushes.White, -16, 8, 32, 1.5f);
                 using (var b = new SolidBrush(C(0xE5395B)))
                     g.FillPolygon(b, new[] { new PointF(15, 9), new PointF(24, 4 + (float)Math.Sin(t * 5) * 2), new PointF(22, 12) });
+                break;
+            case "bow":
+                using (var b = new SolidBrush(C(0xFF5C8A)))
+                    foreach (var sx in new[] { -1f, 1f }) g.FillPolygon(b, new[] { new PointF(8, 16), new PointF(8 + sx * 9, 22), new PointF(8 + sx * 9, 10) });
+                Fill(g, C(0xE0386B), 5, 13, 6, 6);
+                break;
+            case "cowboy":
+                using (var brim = new GraphicsPath())
+                {
+                    brim.AddBezier(-24, 14, -10, 6, 10, 6, 24, 14);
+                    brim.AddBezier(24, 14, 10, 11, -10, 11, -24, 14);
+                    FillPath(g, C(0x9C6B3E), brim);
+                }
+                using (var top = new GraphicsPath())
+                {
+                    top.AddLine(-11, 11, -10, 26);
+                    top.AddBezier(-10, 26, -4, 22, 4, 22, 10, 26);
+                    top.AddLine(10, 26, 11, 11);
+                    top.CloseFigure();
+                    FillPath(g, C(0x9C6B3E), top);
+                }
+                using (var b = new SolidBrush(C(0x5A3A24))) g.FillRectangle(b, -11, 12, 22, 3);
+                break;
+            case "grad":
+                using (var b = new SolidBrush(C(0x222222)))
+                {
+                    g.FillRectangle(b, -10, 9, 20, 8);
+                    g.FillPolygon(b, new[] { new PointF(-20, 19), new PointF(0, 25), new PointF(20, 19), new PointF(0, 13) });
+                }
+                float sw = (float)Math.Sin(t * 3);
+                using (var pen = new Pen(Palette.Spark, 1.4f)) g.DrawLines(pen, new[] { new PointF(0, 19), new PointF(14, 17), new PointF(15 + sw, 8) });
+                Fill(g, Palette.Spark, 13 + sw, 5, 4, 5);
+                break;
+            case "flower":
+                using (var b = new SolidBrush(C(0x5DBB63))) g.FillRectangle(b, -15, 9, 30, 4);
+                uint[] fc = { 0xFF6B9A, 0xFFD54F, 0x9C7BFF, 0x6EC6FF, 0xFF8A65 };
+                for (int k = 0; k < 5; k++)
+                {
+                    float x = -12 + k * 6, y = 12 + (k % 2 == 0 ? 2 : 0);
+                    for (int a = 0; a < 5; a++) { double ang = a / 5.0 * 2 * Math.PI; Fill(g, C(fc[k]), x + (float)Math.Cos(ang) * 2.4f - 1.8f, y + (float)Math.Sin(ang) * 2.4f - 1.8f, 3.6f, 3.6f); }
+                    Fill(g, C(0xFFF3C4), x - 1.2f, y - 1.2f, 2.4f, 2.4f);
+                }
+                break;
+            case "santa":
+                using (var cap = new GraphicsPath())
+                {
+                    cap.AddBezier(-14, 11, -8, 34, 12, 34, 20, 22);
+                    cap.AddLine(20, 22, 14, 11);
+                    cap.CloseFigure();
+                    FillPath(g, C(0xD32F2F), cap);
+                }
+                g.FillRectangle(Brushes.White, -16, 7, 32, 7);
+                Fill(g, Color.White, 16, 17, 9, 9);
+                break;
+            case "pirate":
+                using (var hp = new GraphicsPath())
+                {
+                    hp.AddBezier(-22, 12, -12, 34, 12, 34, 22, 12);
+                    hp.AddBezier(22, 12, 8, 17, -8, 17, -22, 12);
+                    FillPath(g, C(0x222222), hp);
+                }
+                Fill(g, Color.White, -3, 19, 6, 5);
+                using (var pen = new Pen(Color.White, 1.2f)) { g.DrawLine(pen, -5, 16, 5, 20); g.DrawLine(pen, 5, 16, -5, 20); }
+                break;
+            case "viking":
+                using (var b = new SolidBrush(C(0x9E9E9E))) g.FillPie(b, -15, -5, 30, 30, 0, 180);
+                using (var b = new SolidBrush(C(0x795548))) g.FillRectangle(b, -15, 9, 30, 4);
+                foreach (var sx in new[] { -1f, 1f })
+                    using (var h = new GraphicsPath())
+                    {
+                        h.AddBezier(sx * 12, 16, sx * 20, 16, sx * 24, 24, sx * 24, 32);
+                        h.AddBezier(sx * 24, 32, sx * 21, 25, sx * 18, 21, sx * 14, 21);
+                        h.CloseFigure();
+                        FillPath(g, C(0xFFF3E0), h);
+                    }
+                break;
+            case "halo":
+                float bob = (float)Math.Sin(t * 2.2) * 1.5f;
+                using (var glow = new Pen(C(0xFFE57F, 90), 6)) g.DrawEllipse(glow, -12, 26 + bob, 24, 6);
+                using (var pen = new Pen(C(0xFFE57F), 2.6f)) g.DrawEllipse(pen, -12, 26 + bob, 24, 6);
+                break;
+        }
+    }
+
+    // MARK: Accessories (y-up face coordinates)
+
+    static void Accessory(Graphics g, string id, double t)
+    {
+        switch (id)
+        {
+            case "sunglasses":
+                using (var b = new SolidBrush(C(0x111111)))
+                {
+                    foreach (var sx in new[] { -1f, 1f }) using (var path = CornerWindow.RoundRect(new RectangleF(sx * 5.8f - 4.4f, 0, 8.8f, 5.6f), 2.4f)) g.FillPath(b, path);
+                    g.FillRectangle(b, -2, 3.6f, 4, 1.2f);
+                }
+                using (var hl = new SolidBrush(Color.FromArgb(140, 255, 255, 255))) foreach (var sx in new[] { -1f, 1f }) g.FillRectangle(hl, sx * 5.8f - 2.6f, 3.4f, 2.2f, 1);
+                break;
+            case "glasses":
+                using (var pen = new Pen(C(0x3E2723), 1.3f))
+                {
+                    foreach (var sx in new[] { -1f, 1f }) g.DrawEllipse(pen, sx * 5.8f - 4, -1.2f, 8, 7.4f);
+                    g.DrawLine(pen, -1.8f, 3, 1.8f, 3);
+                }
+                break;
+            case "monocle":
+                using (var pen = new Pen(C(0xC9A227), 1.4f)) g.DrawEllipse(pen, 1.6f, -1.6f, 8.4f, 8.4f);
+                using (var pen = new Pen(C(0xC9A227), 0.8f)) g.DrawBezier(pen, 9.6f, 0, 13, -4, 10, -9, 12, -14);
+                break;
+            case "mustache":
+                foreach (var sx in new[] { -1f, 1f })
+                    using (var m = new GraphicsPath())
+                    {
+                        m.AddBezier(0, -2, sx * 3, -0.2f, sx * 6, -4.5f, sx * 8, -1.5f);
+                        m.AddBezier(sx * 8, -1.5f, sx * 5, -5, sx * 2, -4.6f, 0, -3.6f);
+                        m.CloseFigure();
+                        FillPath(g, C(0x3E2723), m);
+                    }
+                break;
+            case "bowtie":
+                using (var b = new SolidBrush(C(0xD32F2F)))
+                    foreach (var sx in new[] { -1f, 1f }) g.FillPolygon(b, new[] { new PointF(0, -16.5f), new PointF(sx * 8, -12.5f), new PointF(sx * 8, -20.5f) });
+                Fill(g, C(0xA52222), -2.4f, -18.9f, 4.8f, 4.8f);
+                break;
+            case "scarf":
+                float sw = (float)Math.Sin(t * 2.5) * 1.5f;
+                using (var b = new SolidBrush(C(0x3F7FE0)))
+                {
+                    using (var path = CornerWindow.RoundRect(new RectangleF(-13, -15.5f, 26, 6), 3)) g.FillPath(b, path);
+                    g.FillPolygon(b, new[] { new PointF(6, -12), new PointF(11 + sw, -24), new PointF(15 + sw, -22), new PointF(11, -11) });
+                }
+                using (var w = new SolidBrush(Color.FromArgb(178, 255, 255, 255))) foreach (var x in new[] { -8f, -2f, 4f }) g.FillRectangle(w, x, -15.5f, 2, 6);
+                break;
+            case "medal":
+                using (var b = new SolidBrush(C(0x3F7FE0))) g.FillPolygon(b, new[] { new PointF(-4, -10), new PointF(4, -10), new PointF(1.5f, -17), new PointF(-1.5f, -17) });
+                Fill(g, C(0xF2C94C), -4.5f, -24, 9, 9);
+                Sparkle(g, Color.White, 0, -19.5f, 2.4f + (float)Math.Abs(Math.Sin(t * 3)));
                 break;
         }
     }
