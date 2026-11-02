@@ -945,7 +945,7 @@ class RoomForm : Form
             bool active = (HudOverlays[i] is Overlay o && o == Current) || (i == 1 && GameOpen);
             Fill(active ? Palette.Orange : Color.FromArgb(In(r, m) ? 51 : 26, 255, 255, 255), r.X, r.Y, r.Width, r.Height, 8);
             string icon = i == 0 && _anim.Sick ? "💊" : HudIcons[i];
-            CenterText(icon, r, r.Y + 6, 14, Color.White);
+            DrawText(icon, r.X + 6, r.Y + 6, 13, Color.White);
             if (In(r, m)) tip = (i == 0 && _anim.Sick ? "Give medicine" : HudLabels[i], r);
         }
         if (In(new RectangleF(8, 6, 156, 32), m)) tip = ($"Level {P.Level} · {P.Data.Xp} / {Progress.XpNeeded(P.Level + 1)} XP", new RectangleF(8, 8, 156, 28));
