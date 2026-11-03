@@ -68,6 +68,7 @@ static class Updater
     /// downloads the new exe, refreshes the hooks and starts buddy again.
     static void Install()
     {
+        Progress.Shared.Save();   // the installer stops buddy, so make sure everything is on disk first
         var script = $"https://raw.githubusercontent.com/{Repo}/main/install.ps1";
         Process.Start(new ProcessStartInfo
         {

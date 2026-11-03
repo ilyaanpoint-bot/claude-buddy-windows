@@ -191,17 +191,57 @@ class SaveData
 
 class Progress
 {
-    public static readonly Progress Shared = new();
+    // Declared before Shared: static fields initialise in order, and the constructor may save.
+    static readonly object SaveLock = new();
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+    public static readonly Progress Shared = new();
 
     public SaveData Data { get; private set; }
     public Action<int, List<Item>> OnLevelUp;
     public Action<Achievement, Item> OnAchievement;
 
+    static string Backup => Paths.Save + ".bak";
+    static string Temp => Paths.Save + ".tmp";
+
     Progress()
     {
-        try { Data = JsonSerializer.Deserialize<SaveData>(File.ReadAllText(Paths.Save), Json); } catch { }
+        // The save is never thrown away: try save.json, then the last good backup, then a
+        // half-finished write. A file that exists but can't be read is set aside, not overwritten.
+        string from = null;
+        foreach (var path in new[] { Paths.Save, Backup, Temp })
+            if ((Data = TryLoad(path)) != null) { from = path; break; }
+        if (from != Paths.Save && File.Exists(Paths.Save))
+        {
+            // Set the broken file aside so the next save can't rotate it over the good backup.
+            try
+            {
+                if (new FileInfo(Paths.Save).Length > 0)
+                    File.Copy(Paths.Save, Path.Combine(Paths.Dir, $"save.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}.json"), true);
+                if (from != null) File.Delete(Paths.Save);
+            }
+            catch { }
+        }
+        if (from != null && from != Paths.Save) Save();
         Data ??= new SaveData();
+    }
+
+    static SaveData TryLoad(string path)
+    {
+        // Antivirus, OneDrive or a second copy of buddy can hold the file for a moment, so retry.
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                var text = File.ReadAllText(path);
+                if (string.IsNullOrWhiteSpace(text) || text.TrimStart()[0] != '{') return null;
+                return JsonSerializer.Deserialize<SaveData>(text, Json);
+            }
+            catch (IOException) { System.Threading.Thread.Sleep(100); }
+            catch (UnauthorizedAccessException) { System.Threading.Thread.Sleep(100); }
+            catch (Exception e) { Program.Log(e); return null; }
+        }
+        return null;
     }
 
     public static int XpNeeded(int level) => 25 * (level - 1) * level;
@@ -453,13 +493,35 @@ class Progress
         return new GameReward(xp, coins, newBest);
     }
 
+    /// Writes save.tmp, flushes it to disk, then swaps it in (keeping the old one as save.json.bak),
+    /// so quitting, End Task, an update or a shutdown can never leave a half-written save.
     public void Save()
     {
-        try
+        lock (SaveLock)
         {
-            Directory.CreateDirectory(Paths.Dir);
-            File.WriteAllText(Paths.Save, JsonSerializer.Serialize(Data, Json));
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Paths.Dir);
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(Data, Json);
+                    using (var f = new FileStream(Temp, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        f.Write(bytes, 0, bytes.Length);
+                        f.Flush(true);
+                    }
+                    if (File.Exists(Paths.Save)) File.Replace(Temp, Paths.Save, Backup, true);
+                    else File.Move(Temp, Paths.Save);
+                    return;
+                }
+                catch (Exception e)
+                {
+                    if (attempt < 4) { System.Threading.Thread.Sleep(50); continue; }
+                    // Some drives don't support Replace: fall back to a plain copy of the finished file.
+                    try { if (File.Exists(Temp)) File.Copy(Temp, Paths.Save, true); } catch (Exception e2) { Program.Log(e2); }
+                    Program.Log(e);
+                }
+            }
         }
-        catch { }
     }
 }

@@ -1,6 +1,7 @@
 # Removes Claude Buddy's hooks, shortcuts and startup entry, and quits it.
 # Your progress (save.json) stays in %USERPROFILE%\.claude\claude-buddy so a reinstall keeps it.
 $ErrorActionPreference = "SilentlyContinue"
+Get-Process ClaudeBuddy | ForEach-Object { $_.CloseMainWindow() | Out-Null; $_.WaitForExit(3000) | Out-Null }
 Get-Process ClaudeBuddy | Stop-Process -Force
 Remove-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "ClaudeBuddy"
 foreach ($dir in @([Environment]::GetFolderPath("Programs"), [Environment]::GetFolderPath("Desktop"))) {

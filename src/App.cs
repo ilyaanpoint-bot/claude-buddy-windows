@@ -35,6 +35,10 @@ static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.ThreadException += (_, e) => Log(e.Exception);
+        // Write the latest progress on every way out: Quit, signing out and shutting down.
+        Application.ApplicationExit += (_, _) => Progress.Shared.Save();
+        SystemEvents.SessionEnding += (_, _) => Progress.Shared.Save();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => Progress.Shared.Save();
         var app = new BuddyApp(comeBack);
         int selfTest = Array.IndexOf(args, "--self-test");
         if (selfTest >= 0) app.SelfTest(selfTest + 1 < args.Length ? args[selfTest + 1] : "self-test");

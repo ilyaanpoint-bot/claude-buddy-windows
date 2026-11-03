@@ -35,6 +35,8 @@ if ($proj -and (Test-Path $proj) -and $haveSdk -and -not $Update) {
     Invoke-WebRequest "https://github.com/$repo/releases/latest/download/ClaudeBuddy.exe" -OutFile "$exe.new" -UseBasicParsing
 }
 Write-Host "-> Stopping any running buddy..."
+# Ask buddy to quit first so he saves, and only force it if he doesn't close.
+Get-Process ClaudeBuddy -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null; $_.WaitForExit(3000) | Out-Null }
 Get-Process ClaudeBuddy -ErrorAction SilentlyContinue | Stop-Process -Force
 Replace-Exe "$exe.new"
 
